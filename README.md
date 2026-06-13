@@ -1,35 +1,45 @@
-# Cloudflare Services Demo
+# Cloudflare Proof of Concepts
 
-A full-stack demo built with HTML, CSS, JavaScript, Pages Functions, and several
-Cloudflare platform services.
+A full-stack proof of concept built with HTML, CSS, JavaScript, Pages Functions,
+and multiple Cloudflare platform services. The app combines CRUD todos,
+queue-backed analytics, a Durable Object counter, workflow-driven auto-delete,
+and room-based RealtimeKit calls.
+
+## Features
+
+- Add, complete, and delete todos
+- Optional auto-delete for todos created with a delay
+- Persistent todo storage in Cloudflare D1
+- Queue-backed analytics activity tracking
+- App configuration stored in Cloudflare KV
+- Isolated persistent counter with a Durable Object
+- RealtimeKit room creation and join flow with audio, video, and chat
 
 ## Services Demonstrated
 
 - Cloudflare Pages and Pages Functions
-- D1 database for todos and analytics
-- Workers KV for application configuration
-- Queues for asynchronous analytics events
-- Durable Objects for an isolated persistent counter
+- D1 for todos and analytics events
+- KV for app-wide section visibility
+- Queues for asynchronous analytics ingestion
+- Durable Objects for counter state
 - Workflows for delayed todo deletion
-- RealtimeKit for room-based audio, video, and chat
-- Service bindings between Pages and Workers
+- RealtimeKit for meeting setup and token minting
+- Service bindings between the Pages app and auxiliary Workers
 
 ## Automated Deployment
 
-No Cloudflare dashboard resource setup is required. The GitHub Actions workflow
-creates or reuses every named resource, generates account-specific Wrangler
-configuration, applies the D1 schema, deploys all Workers, configures bindings,
-stores the RealtimeKit token as a Pages secret, and deploys the Pages project.
+No Cloudflare dashboard resource setup is required for the normal deployment
+path. The GitHub Actions workflow creates or reuses each named resource,
+generates account-specific Wrangler configuration, applies the D1 schema,
+deploys the Workers, configures bindings, stores the RealtimeKit token as a
+Pages secret, and deploys the Pages project.
 
-1. Push this repository to GitHub. Its configured default branch is used as
-   the Cloudflare Pages production branch.
+1. Push this repository to GitHub. Its configured default branch is used as the
+   Cloudflare Pages production branch.
 2. Open **Settings > Secrets and variables > Actions** in the GitHub repository.
 3. Add these repository secrets:
    - `CLOUDFLARE_ACCOUNT_ID`
    - `CLOUDFLARE_API_TOKEN`
-4. Push to the repository's default branch, or manually run **Provision and
-   deploy Cloudflare demo** from a selected branch in the Actions tab. Pushes
-   to non-default branches are skipped so they cannot overwrite shared Workers.
 
 The API token must be scoped to the target account and include edit/write
 permissions for:
@@ -55,47 +65,104 @@ The workflow manages these resources by name:
 | Workflow Worker | `cf-todo-workflow` |
 | RealtimeKit app | `cf-realtime` |
 
-Provisioning is idempotent. Existing D1, KV, Queue, Pages, and RealtimeKit
-resources with these exact names are reused on later deployments.
-
-## Deployment Flow
-
-1. Build only `index.html`, `script.js`, and `style.css` into `dist/`.
-2. Create or find D1, KV, Queue, RealtimeKit, and Pages resources.
-3. Generate Wrangler configuration containing the returned resource IDs.
-4. Apply `schema.sql` to the remote D1 database.
-5. Deploy the Durable Object Worker.
-6. Deploy the analytics Queue consumer with its D1 binding.
-7. Deploy the Workflow Worker with D1, Queue, and Workflow bindings.
-8. Store the GitHub API token as the server-side Pages secret
-   `REALTIMEKIT_API_TOKEN`.
-9. Deploy Pages Functions with D1, KV, Queue, Durable Object, and service
-   bindings.
-
-Generated configuration is written to `.cloudflare/generated/` and is ignored
-by Git because it contains account-specific resource identifiers.
-
-## Local Checks
-
-Install dependencies and validate the generated configuration without calling
-Cloudflare:
-
-```bash
-npm ci
-npm run build
-npm run check:deploy
-```
-
-For local development, use Wrangler after supplying local bindings and secrets
-appropriate for your Cloudflare account.
-
 ## API Routes
 
-- `/api/todos`: todo CRUD, Queue publishing, and Workflow triggering
-- `/api/analytics`: analytics dashboard data from D1
-- `/api/config`: global section visibility stored in KV
-- `/api/counter`: proxy to the Durable Object counter
-- `/api/realtime-call`: create and join RealtimeKit meetings
+- `/api/todos`
+  - `GET`: list todos
+  - `POST`: create a todo and optionally trigger workflow auto-delete
+  - `PUT`: update completion state
+  - `DELETE`: delete by query param `id`
+- `/api/analytics`
+  - `GET`: aggregate event counts and recent queue-ingested events
+- `/api/config`
+  - `GET`: read app section visibility config from KV
+  - `POST`: update app section visibility config in KV
+- `/api/counter`
+  - Proxies `GET`, `POST`, `PUT`, and `DELETE` to the Durable Object
+- `/api/realtime-call`
+  - `POST` with `action: create_call` to create a room
+  - `POST` with `action: join_call` to mint a participant auth token
+
+## Todo Flow
+
+1. Frontend sends CRUD requests to `/api/todos`.
+2. `functions/api/todos.js` reads and writes todos in D1.
+3. On create, update, or delete, an analytics event is sent to
+   `ANALYTICS_QUEUE`.
+4. If `delaySeconds > 0`, todo creation also triggers `TODO_WORKFLOW_SERVICE`
+   for scheduled auto-delete.
+
+## Analytics Flow
+
+1. A todo mutation succeeds in `functions/api/todos.js`.
+2. The API publishes an event to `cf-analytics-queue`.
+3. The consumer worker in `analytics-consumer/src/index.js` writes the event
+   into D1.
+4. `functions/api/analytics.js` reads the aggregated activity data for the
+   dashboard.
+5. The frontend polls `/api/analytics` and shows the queue-backed activity
+   stream.
+
+## Config Flow
+
+1. The Config section in the frontend reads and updates `/api/config`.
+2. `functions/api/config.js` stores the section visibility settings in
+   `CONFIG_KV`.
+3. The UI applies the saved config to show or hide the Todos, Analytics,
+   Counter, and Call sections.
+
+## Auto-Delete Workflow Flow
+
+1. A todo is created with a non-zero delay from the frontend.
+2. `functions/api/todos.js` calls the `TODO_WORKFLOW_SERVICE` service binding.
+3. The `todo-workflow` worker waits for the requested duration.
+4. The workflow deletes the todo from D1.
+5. The workflow publishes a `todo.auto_deleted` event to the analytics queue.
+6. The analytics consumer writes the event to D1 for the dashboard.
+
+## Counter Flow
+
+1. The frontend calls `/api/counter` for read, increment, and reset actions.
+2. `functions/api/counter.js` forwards those requests to the `COUNTER`
+   Durable Object binding.
+3. The `counter-worker` project owns the `Counter` Durable Object class and
+   persists the counter value in its own storage.
+4. The todo data path stays in D1 and the counter stays isolated in Durable
+   Object storage.
+
+## Realtime Call Flow
+
+1. In the Call section, users click **Create Call** or paste a room code and
+   click **Join Call**.
+2. The frontend calls `functions/api/realtime-call.js`.
+3. The API creates a RealtimeKit meeting or mints a participant token for the
+   requested room.
+4. The frontend initializes RealtimeKit with that token and mounts a focused
+   meeting layout.
+5. Audio, video, participants, and chat stay inside the same call room.
+
+## Database Schema
+
+`schema.sql` creates:
+
+- `todos`: persistent todo records
+- `todo_analytics_events`: queue-ingested activity records
+- indexes used by the analytics dashboard
+
+Key columns:
+
+- `todos.id`: unique identifier
+- `todos.title`: required todo text
+- `todos.completed`: completion flag
+- `todos.created_at`: creation timestamp
+- `todo_analytics_events.event_id`: unique queue event ID for idempotent writes
+- `todo_analytics_events.event_type`: event name such as `todo.created`
+- `todo_analytics_events.todo_id`: related todo ID
+- `todo_analytics_events.payload`: JSON snapshot of the event body
+- `todo_analytics_events.occurred_at`: timestamp generated by the producer
+
+All statements use `IF NOT EXISTS`, so the deployment can safely apply the
+schema on every run.
 
 ## Project Layout
 
@@ -105,26 +172,37 @@ appropriate for your Cloudflare account.
 |   |-- scripts/
 |   |   |-- build-pages.js
 |   |   `-- setup-cloudflare.js
-|   `-- workflows/deploy.yml
+|   `-- workflows/
+|       `-- deploy.yml
 |-- analytics-consumer/
+|   `-- src/index.js
 |-- counter-worker/
-|-- functions/api/
-|-- todo-workflow/
+|   `-- src/index.js
+|-- functions/
+|   `-- api/
+|       |-- analytics.js
+|       |-- config.js
+|       |-- counter.js
+|       |-- realtime-call.js
+|       `-- todos.js
 |-- index.html
-|-- package.json
 |-- package-lock.json
+|-- package.json
 |-- schema.sql
 |-- script.js
-`-- style.css
+|-- style.css
+`-- todo-workflow/
+   `-- src/index.js
 ```
 
-## Database Schema
+## Resources
 
-`schema.sql` creates:
-
-- `todos`: persistent todo records
-- `todo_analytics_events`: Queue-ingested activity records
-- indexes used by the analytics dashboard
-
-All statements use `IF NOT EXISTS`, so the deployment can safely apply the
-schema on every run.
+- [Cloudflare Pages Documentation](https://developers.cloudflare.com/pages/)
+- [Pages Functions](https://developers.cloudflare.com/pages/platform/functions/)
+- [Workers & Pages](https://developers.cloudflare.com/workers-and-pages/)
+- [D1 Database](https://developers.cloudflare.com/d1/)
+- [Cloudflare KV](https://developers.cloudflare.com/kv/)
+- [Cloudflare Queues](https://developers.cloudflare.com/queues/)
+- [Cloudflare Durable Objects](https://developers.cloudflare.com/durable-objects/)
+- [Cloudflare Workflows](https://developers.cloudflare.com/workflows/)
+- [Cloudflare RealtimeKit](https://developers.cloudflare.com/realtime/realtimekit/)

@@ -28,14 +28,11 @@ and room-based RealtimeKit calls.
 
 ## Automated Deployment
 
-No Cloudflare dashboard resource setup is required for the normal deployment
-path. The GitHub Actions workflow creates or reuses each named resource,
-generates account-specific Wrangler configuration, applies the D1 schema,
-deploys the Workers, configures bindings, stores the RealtimeKit token as a
-Pages secret, and deploys the Pages project.
+This project uses a GitHub Actions script for automated deployment. It creates
+the Cloudflare resources, applies the D1 schema, deploys the Workers and Pages
+project, and sets up the required bindings.
 
-1. Push this repository to GitHub. Its configured default branch is used as the
-   Cloudflare Pages production branch.
+1. Push this repository to GitHub. 
 2. Open **Settings > Secrets and variables > Actions** in the GitHub repository.
 3. Add these repository secrets:
    - `CLOUDFLARE_ACCOUNT_ID`

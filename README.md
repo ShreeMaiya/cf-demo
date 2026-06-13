@@ -158,6 +158,8 @@ The workflow manages these resources by name:
 |   `-- src/index.js
 |-- counter-worker/
 |   `-- src/index.js
+|-- todo-workflow/
+|   `-- src/index.js
 |-- functions/
 |   `-- api/
 |       |-- analytics.js
@@ -171,8 +173,7 @@ The workflow manages these resources by name:
 |-- schema.sql
 |-- script.js
 |-- style.css
-`-- todo-workflow/
-   `-- src/index.js
+
 ```
 
 ## Resources

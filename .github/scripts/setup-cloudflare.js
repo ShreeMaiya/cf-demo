@@ -232,6 +232,7 @@ service = ${tomlString(names.workflowWorker)}
 async function writeConfigs(resources) {
   const output = resolve(".cloudflare", "generated");
   await mkdir(output, { recursive: true });
+  await mkdir(resolve(".wrangler", "deploy"), { recursive: true });
 
   const configs = {
     counter: workerConfig({
@@ -263,6 +264,12 @@ async function writeConfigs(resources) {
     Object.entries(configs).map(([name, contents]) =>
       writeFile(resolve(output, `${name}.toml`), contents, "utf8")
     )
+  );
+
+  await writeFile(
+    resolve(".wrangler", "deploy", "config.json"),
+    JSON.stringify({ configPath: "../../.cloudflare/generated/pages.toml" }, null, 2),
+    "utf8"
   );
 
   return Object.fromEntries(

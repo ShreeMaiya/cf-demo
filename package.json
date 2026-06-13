@@ -1,0 +1,13 @@
+{
+  "name": "cloudflare-services-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node .github/scripts/build-pages.js",
+    "deploy": "node .github/scripts/setup-cloudflare.js",
+    "check:deploy": "node .github/scripts/setup-cloudflare.js --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

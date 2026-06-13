@@ -1,0 +1,42 @@
+name: Provision and deploy Cloudflare demo
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || vars.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_PAGES_PRODUCTION_BRANCH: ${{ github.event.repository.default_branch }}
+      CLOUDFLARE_PAGES_DEPLOY_BRANCH: ${{ github.ref_name }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install deployment tooling
+        run: npm ci
+
+      - name: Build Pages assets
+        run: npm run build
+
+      - name: Provision and deploy Cloudflare services
+        run: npm run deploy

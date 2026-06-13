@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cloudflare Proof of Concepts</title>
+  <meta name="description" content="A full-stack demo application showcasing Cloudflare Pages, D1 Database, KV storage, Durable Objects, Workflows, Queues, and RealtimeKit." />
+  <link rel="stylesheet" href="style.css" />
+  <script type="module">
+    import { defineCustomElements } from "https://cdn.jsdelivr.net/npm/@cloudflare/realtimekit-ui@latest/loader/index.es2017.js";
+    defineCustomElements();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@cloudflare/realtimekit@latest/dist/browser.js"></script>
+</head>
+
+<body data-default-section="todos">
+  <main class="app">
+    <!-- Top bar with app title and theme switch. -->
+    <header class="app-header">
+      <h1>Cloudflare Proof of Concepts</h1>
+      <div class="header-actions">
+        <div class="section-switcher" role="tablist" aria-label="App sections">
+          <button class="section-tab" type="button" data-section-tab="todos" aria-pressed="true">Todos</button>
+          <button class="section-tab" type="button" data-section-tab="analytics" aria-pressed="false">Analytics</button>
+          <button class="section-tab" type="button" data-section-tab="counter" aria-pressed="false">Counter</button>
+          <button class="section-tab" type="button" data-section-tab="call" aria-pressed="false">Call</button>
+          <button class="section-tab" type="button" data-section-tab="config" aria-pressed="false">Config</button>
+        </div>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to dark mode">
+          <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
+          <span class="theme-icon theme-icon-moon" aria-hidden="true">🌙</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Todo section: input form, status message, and list rendering target. -->
+    <section id="todos-section" class="content-section" data-section-panel="todos" aria-label="Todo section">
+      <form id="todo-form" class="todo-form" autocomplete="off">
+        <div class="todo-form-inputs">
+          <input id="todo-input" type="text" placeholder="Add a new task..." maxlength="200" required />
+          <select id="todo-delay" class="todo-delay" aria-label="Auto-delete delay">
+            <option value="0">No auto-delete</option>
+            <option value="10">10 Seconds</option>
+            <option value="60">1 Minute</option>
+            <option value="3600">1 Hour</option>
+            <option value="86400">1 Day</option>
+          </select>
+        </div>
+        <button type="submit">Add</button>
+      </form>
+
+      <p id="message" class="message" aria-live="polite"></p>
+
+      <ul id="todo-list" class="todo-list"></ul>
+    </section>
+
+    <section class="content-section analytics-panel" data-section-panel="analytics" aria-label="Analytics dashboard">
+      <div class="analytics-header">
+        <div>
+          <h2>Queue Activity</h2>
+          <p id="analytics-status" class="analytics-status">Loading queue-backed activity...</p>
+        </div>
+        <button id="analytics-refresh" class="analytics-refresh" type="button">Refresh</button>
+      </div>
+
+      <div id="analytics-counts" class="analytics-counts" aria-live="polite"></div>
+
+      <ul id="analytics-events" class="analytics-events"></ul>
+    </section>
+
+    <section id="counter-section" class="content-section counter-section" data-section-panel="counter"
+      aria-label="Counter section">
+      <div class="counter-copy">
+        <h2>Durable Object Counter</h2>
+        <p>State here is isolated from todos and stored in a separate Durable Object.</p>
+      </div>
+
+      <div class="counter-card">
+        <div class="counter-value" id="counter-value">0</div>
+        <p id="counter-message" class="message" aria-live="polite"></p>
+
+        <div class="counter-actions">
+          <button id="counter-increment" class="counter-button counter-button-primary" type="button">
+            Increment
+          </button>
+          <button id="counter-reset" class="counter-button" type="button">
+            Reset
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="call-section" class="content-section call-section" data-section-panel="call"
+      aria-label="Realtime call section">
+      <div class="call-header">
+        <div>
+          <h2>Realtime Video Call</h2>
+          <p id="call-status" class="call-status">Create a call or join with a room code.</p>
+        </div>
+      </div>
+
+      <div class="call-entry-grid">
+        <section class="call-card">
+          <div class="call-card-copy">
+            <h3>Create Call</h3>
+            <p>Create a new call room, auto-join, and share the code with others.</p>
+          </div>
+          <label class="call-field">
+            <span>Your Name</span>
+            <input id="call-create-name" type="text" maxlength="64" placeholder="Enter your name" />
+          </label>
+          <button id="call-create" class="call-button call-button-primary" type="button">Create Call</button>
+        </section>
+
+        <section class="call-card">
+          <div class="call-card-copy">
+            <h3>Join Call</h3>
+            <p>Enter a room code from another user to join the same call.</p>
+          </div>
+          <label class="call-field">
+            <span>Your Name</span>
+            <input id="call-join-name" type="text" maxlength="64" placeholder="Enter your name" />
+          </label>
+          <label class="call-field">
+            <span>Room Code</span>
+            <input id="call-room-code" type="text" maxlength="80" placeholder="Paste room code" />
+          </label>
+          <button id="call-join" class="call-button" type="button">Join Call</button>
+        </section>
+      </div>
+
+      <div id="call-room-view" class="call-room-view" hidden>
+        <div class="call-room-topbar">
+          <div class="call-room-topbar-left">
+            <span class="call-room-topbar-label">Room</span>
+            <span id="call-room-meta" class="call-room-meta" aria-live="polite"></span>
+          </div>
+          <div class="call-room-topbar-right">
+            <button id="call-copy-code" class="call-btn-icon-secondary" type="button" title="Copy room code">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              Copy Code
+            </button>
+            <button id="call-fullscreen-btn" class="call-btn-icon-secondary" type="button" title="Toggle fullscreen">
+              <svg class="icon-fullscreen-enter" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+              </svg>
+              <svg class="icon-fullscreen-exit" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+                <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+                <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+                <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+              </svg>
+              <span class="fullscreen-label">Fullscreen</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="call-live-shell" class="call-live-shell" hidden>
+          <rtk-ui-provider id="rtk-call-provider" class="rtk-call-provider">
+            <div class="call-video-grid" id="call-video-grid" aria-live="polite"></div>
+          </rtk-ui-provider>
+        </div>
+
+        <div class="call-toolbar" role="toolbar" aria-label="Call controls">
+          <button id="call-toggle-audio" class="call-toolbar-btn" type="button" title="Toggle microphone"
+            aria-pressed="false">
+            <svg class="icon-mic-on" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+            <svg class="icon-mic-off" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="1" y1="1" x2="23" y2="23" />
+              <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V5a3 3 0 0 0-5.94-.6" />
+              <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+            <span class="call-toolbar-label">Mic</span>
+          </button>
+
+          <button id="call-toggle-video" class="call-toolbar-btn" type="button" title="Toggle camera"
+            aria-pressed="false">
+            <svg class="icon-cam-on" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="23 7 16 12 23 17 23 7" />
+              <rect x="1" y="5" width="15" height="14" rx="2" />
+            </svg>
+            <svg class="icon-cam-off" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="1" y1="1" x2="23" y2="23" />
+              <path
+                d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34m-7.72-2.06A4 4 0 1 1 7.72 7.72" />
+            </svg>
+            <span class="call-toolbar-label">Camera</span>
+          </button>
+
+          <button id="call-leave" class="call-toolbar-btn call-toolbar-btn-leave" type="button" title="Leave call">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path
+                d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07C9.44 17.29 7.76 15.9 6.32 14.32" />
+              <path d="M23 1 1 23" />
+            </svg>
+            <span class="call-toolbar-label">Leave</span>
+          </button>
+
+          <button id="call-participants-btn" class="call-toolbar-btn" type="button" title="Participants"
+            aria-expanded="false">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span class="call-toolbar-label">Participants</span>
+          </button>
+
+          <button id="call-chat-btn" class="call-toolbar-btn" type="button" title="Chat" aria-expanded="false">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="call-toolbar-label">Chat</span>
+          </button>
+        </div>
+
+        <div id="call-participants-popup" class="call-popup" hidden aria-label="Participants">
+          <div class="call-popup-header">
+            <span>Participants</span>
+            <button class="call-popup-close" data-close-popup="call-participants-popup" type="button"
+              aria-label="Close">&#x2715;</button>
+          </div>
+          <ul id="call-participants-list" class="call-participants-list"></ul>
+        </div>
+
+        <div id="call-chat-popup" class="call-popup" hidden aria-label="Chat">
+          <div class="call-popup-header">
+            <span>Chat</span>
+            <button class="call-popup-close" data-close-popup="call-chat-popup" type="button"
+              aria-label="Close">&#x2715;</button>
+          </div>
+          <rtk-chat id="rtk-call-chat"></rtk-chat>
+        </div>
+      </div>
+    </section>
+
+    <section class="content-section config-section" data-section-panel="config" aria-label="Configuration section">
+      <div class="config-copy">
+        <h2>App Config</h2>
+        <p>Toggle Section visibility for all users.</p>
+      </div>
+
+      <form id="config-form" class="config-form" autocomplete="off">
+        <label class="config-field">
+          <input id="config-todos" type="checkbox" />
+          <span>Enable Todos section</span>
+        </label>
+
+        <label class="config-field">
+          <input id="config-analytics" type="checkbox" />
+          <span>Enable Analytics section</span>
+        </label>
+
+        <label class="config-field">
+          <input id="config-counter" type="checkbox" />
+          <span>Enable Counter section</span>
+        </label>
+
+        <label class="config-field">
+          <input id="config-call" type="checkbox" />
+          <span>Enable Call section</span>
+        </label>
+
+        <button id="config-save" class="config-save" type="submit">Save Config</button>
+      </form>
+
+      <p id="config-message" class="message" aria-live="polite"></p>
+    </section>
+  </main>
+
+  <script type="module" src="script.js"></script>
+</body>
+
+</html>

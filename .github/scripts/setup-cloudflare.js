@@ -365,9 +365,7 @@ await runWrangler([
   names.pagesProject,
   "--branch",
   DEPLOY_BRANCH,
-  "--commit-dirty=true",
-  "--config",
-  configs.pages
+  "--commit-dirty=true"
 ]);
 
 console.log("Cloudflare provisioning and deployment completed.");

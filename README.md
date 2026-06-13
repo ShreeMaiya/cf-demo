@@ -38,8 +38,13 @@ project, and sets up the required bindings.
    - `CLOUDFLARE_ACCOUNT_ID`
    - `CLOUDFLARE_API_TOKEN`
 
-The API token must be scoped to the target account and include edit/write
-permissions for:
+You can find `CLOUDFLARE_ACCOUNT_ID` in the Cloudflare dashboard for your
+account. It is shown in the account overview or account settings area.
+
+Create `CLOUDFLARE_API_TOKEN` in the Cloudflare dashboard under
+**My Profile > API Tokens > Create Token**.
+
+The token must have edit/write permissions for:
 
 - Workers Scripts
 - Cloudflare Pages
